@@ -1,0 +1,10 @@
+node_modules/
+main.js
+*.log
+.DS_Store
+.idea/
+.vscode/
+coverage/
+dist/
+data.json
+.dev-vault/

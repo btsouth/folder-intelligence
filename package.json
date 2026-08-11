@@ -1,0 +1,40 @@
+{
+	"name": "folder-intelligence",
+	"version": "0.2.0",
+	"description": "Living folder dashboards and privacy-aware AI summaries for Obsidian",
+	"main": "main.js",
+	"type": "module",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
+		"format": "prettier --write .",
+		"format:check": "prettier --check .",
+		"lint": "eslint .",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"version": "node version-bump.mjs && git add manifest.json versions.json"
+	},
+	"keywords": [
+		"obsidian",
+		"obsidian-plugin",
+		"folder-notes",
+		"ai",
+		"dashboard"
+	],
+	"author": "Tyler South",
+	"license": "MIT",
+	"devDependencies": {
+		"@eslint/js": "^9.39.4",
+		"@types/node": "^22.15.17",
+		"esbuild": "0.25.5",
+		"eslint": "^9.39.4",
+		"eslint-plugin-obsidianmd": "^0.4.0",
+		"globals": "^17.6.0",
+		"jiti": "^2.6.1",
+		"obsidian": "latest",
+		"prettier": "^3.6.2",
+		"typescript": "^5.8.3",
+		"typescript-eslint": "^8.59.1",
+		"vitest": "^3.2.4"
+	}
+}
