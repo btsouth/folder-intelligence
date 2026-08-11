@@ -40,6 +40,9 @@ export const DEFAULT_SETTINGS: FolderIntelligenceSettings = {
 	defaultProfileId: 'default',
 	folderProfileRules: [],
 	usageRecords: [],
+	noteSummaryRecords: [],
+	noteBriefMaxOutputTokens: 700,
+	preferFreshNoteBriefsInFolderSummaries: true,
 };
 
 function lines(value: string): string[] {
@@ -152,6 +155,30 @@ export class FolderIntelligenceSettingTab extends PluginSettingTab {
 						control: {
 							type: 'text',
 							key: 'sensitivePropertiesText',
+						},
+					},
+				],
+			},
+			{
+				type: 'group',
+				heading: 'AI note briefs',
+				items: [
+					{
+						name: 'Use fresh note briefs in folder summaries',
+						desc: 'When a note brief is current, folder AI uses that shorter brief instead of resending the full note. Sensitive-note rules still apply.',
+						control: {
+							type: 'toggle',
+							key: 'preferFreshNoteBriefsInFolderSummaries',
+						},
+					},
+					{
+						name: 'Maximum note-brief output tokens',
+						desc: 'Keeps individual note summaries compact. The selected profile’s lower output limit still wins.',
+						control: {
+							type: 'number',
+							key: 'noteBriefMaxOutputTokens',
+							min: 128,
+							max: 4000,
 						},
 					},
 				],
@@ -504,6 +531,22 @@ export class FolderIntelligenceSettingTab extends PluginSettingTab {
 					),
 			);
 
+		new Setting(containerEl).setName('AI note briefs').setHeading();
+		this.addLegacyToggle(
+			containerEl,
+			'Use fresh note briefs in folder summaries',
+			'When a note brief is current, folder AI uses it instead of resending the full note.',
+			'preferFreshNoteBriefsInFolderSummaries',
+			this.plugin.settings.preferFreshNoteBriefsInFolderSummaries,
+		);
+		this.addLegacyNumber(
+			containerEl,
+			'Maximum note-brief output tokens',
+			'Keeps individual note summaries compact.',
+			'noteBriefMaxOutputTokens',
+			this.plugin.settings.noteBriefMaxOutputTokens,
+		);
+
 		new Setting(containerEl).setName('AI profiles').setHeading();
 		new Setting(containerEl)
 			.setName('Default profile')
@@ -814,6 +857,16 @@ export class FolderIntelligenceSettingTab extends PluginSettingTab {
 				break;
 			case 'autoSummarizeOnOpen':
 				this.plugin.settings.autoSummarizeOnOpen = Boolean(value);
+				break;
+			case 'preferFreshNoteBriefsInFolderSummaries':
+				this.plugin.settings.preferFreshNoteBriefsInFolderSummaries =
+					Boolean(value);
+				break;
+			case 'noteBriefMaxOutputTokens':
+				this.plugin.settings.noteBriefMaxOutputTokens = Math.min(
+					4000,
+					Math.max(128, Math.floor(Number(value) || 700)),
+				);
 				break;
 			case 'customProtocol':
 				profile.customProtocol =

@@ -38,6 +38,9 @@ function settings(): FolderIntelligenceSettings {
 		defaultProfileId: 'personal',
 		folderProfileRules: [{ pattern: '03 Work/**', profileId: 'work' }],
 		usageRecords: [],
+		noteSummaryRecords: [],
+		noteBriefMaxOutputTokens: 700,
+		preferFreshNoteBriefsInFolderSummaries: true,
 	};
 }
 

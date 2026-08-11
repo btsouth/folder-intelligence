@@ -41,6 +41,16 @@ export interface UsageRecord {
 	estimatedCostUsd?: number;
 }
 
+export interface NoteSummaryRecord {
+	path: string;
+	fingerprint: string;
+	provider: ProviderKind;
+	model: string;
+	profileId: string;
+	profileName: string;
+	generatedAt: string;
+}
+
 export interface FolderIntelligenceSettings {
 	dashboardNameTemplate: string;
 	autoCreateDashboardForNewFolders: boolean;
@@ -63,6 +73,9 @@ export interface FolderIntelligenceSettings {
 	defaultProfileId: string;
 	folderProfileRules: FolderProfileRule[];
 	usageRecords: UsageRecord[];
+	noteSummaryRecords: NoteSummaryRecord[];
+	noteBriefMaxOutputTokens: number;
+	preferFreshNoteBriefsInFolderSummaries: boolean;
 }
 
 export interface NoteSnapshot {
@@ -71,6 +84,7 @@ export interface NoteSnapshot {
 	name: string;
 	modifiedAt: number;
 	content: string;
+	contentKind?: 'full-note' | 'ai-note-brief';
 	aiEligible: boolean;
 	exclusionReason?: string;
 }

@@ -158,6 +158,15 @@ export function migrateProviderProfiles(
 		usageRecords: Array.isArray(settings.usageRecords)
 			? settings.usageRecords
 			: [],
+		noteSummaryRecords: Array.isArray(settings.noteSummaryRecords)
+			? settings.noteSummaryRecords
+			: [],
+		noteBriefMaxOutputTokens: Math.max(
+			128,
+			Math.floor(Number(settings.noteBriefMaxOutputTokens) || 700),
+		),
+		preferFreshNoteBriefsInFolderSummaries:
+			settings.preferFreshNoteBriefsInFolderSummaries !== false,
 	};
 }
 

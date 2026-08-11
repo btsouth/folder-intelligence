@@ -14,7 +14,7 @@ The plugin is local-first and useful without an API key. It never moves notes au
 - Maintain direct-note and child-folder indexes after file changes.
 - Mark AI summaries stale without making an API call on every edit.
 - Refresh a stale summary when its dashboard opens, or work manually.
-- Preserve everything written outside managed HTML-comment regions.
+- Preserve user-authored note and dashboard content outside clearly identified generated sections.
 - Follow plugin-owned dashboards across folder renames.
 - Mark a note sensitive from the command palette.
 - Build large vaults as hierarchical rollups: each dashboard reads direct notes and cached briefs from immediate child folders instead of sending an entire recursive tree in one request.
@@ -26,6 +26,9 @@ The plugin is local-first and useful without an API key. It never moves notes au
 - Create named profiles such as Work and Personal, route folder globs to them, and optionally override a dashboard with `folder-intelligence-profile` frontmatter.
 - Preview request size and maximum estimated cost, then enforce per-profile daily request limits and monthly budgets locally.
 - Keep each API key in memory for the current Obsidian session instead of saving it.
+- Summarize any Markdown note into a clean native **AI note brief** callout at the top of the note.
+- Refresh or remove a note brief from the note context menu or command palette.
+- Reuse fresh note briefs in folder prompts instead of repeatedly resending full notes.
 
 The default provider/model is OpenAI `gpt-5.6-luna`. Other provider defaults are Claude Haiku 4.5, Gemini 3.5 Flash-Lite, DeepSeek V4 Flash, and Grok 4.5. Every model ID and endpoint remains editable.
 
@@ -37,6 +40,23 @@ The default provider/model is OpenAI `gpt-5.6-luna`. Other provider defaults are
 4. Optionally configure the Default profile and enter an API key under **Settings → Folder Intelligence**.
 5. Right-click the folder and choose **Refresh AI folder brief**. Confirm the provider, input estimate, and maximum estimated cost.
 6. For an existing hierarchy, choose **Refresh AI subtree…**. Missing dashboards remain untouched unless you explicitly enable their creation.
+
+## AI note briefs
+
+Right-click any Markdown note and choose **Summarize note with AI…**. After the same provider, token, and cost confirmation used by folder briefs, Folder Intelligence inserts a native Obsidian callout directly below YAML frontmatter:
+
+```markdown
+> [!abstract] AI note brief
+> A concise summary of the note.
+>
+> **Key points**
+>
+> - Important detail
+```
+
+The exact callout is plugin-owned; refreshing replaces only that callout, while **Remove AI note brief…** removes it after confirmation. User-authored source content is never rewritten. Sensitive and excluded notes cannot be summarized.
+
+Note briefs are manual by default. The plugin does not summarize a vault or folder automatically. When a brief is still current, folder summaries use it as a compact cached input; when its source note changes, the folder summarizer falls back to the full note until the brief is refreshed.
 
 [Folder Notes](https://community.obsidian.md/plugins/folder-notes) is an optional companion. Because Folder Intelligence uses folder-matching note names by default, Folder Notes can make a normal click on a folder open its generated dashboard.
 

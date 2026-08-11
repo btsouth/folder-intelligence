@@ -12,6 +12,8 @@ import {
 	normalizeGeneratedMarkdown,
 	SUMMARY_SYSTEM_PROMPT,
 } from './prompt';
+import { noteSourceContent } from './note-brief-format';
+import { aiExclusionReason } from './privacy';
 import { generateText, type ProviderConfiguration } from './providers';
 import { resolveProfile } from './profiles';
 import {
@@ -51,6 +53,7 @@ export interface DashboardEngineOptions {
 	getSettings: () => FolderIntelligenceSettings;
 	getSessionApiKey: (profileId: string) => string;
 	recordUsage: (record: UsageRecord) => Promise<void>;
+	getFreshNoteBrief?: (file: TFile, content: string) => string | undefined;
 }
 
 export interface FolderSummaryEstimate extends RequestEstimate {
@@ -101,6 +104,10 @@ export class DashboardEngine {
 	private readonly getSettings: () => FolderIntelligenceSettings;
 	private readonly getSessionApiKey: (profileId: string) => string;
 	private readonly recordUsage: (record: UsageRecord) => Promise<void>;
+	private readonly getFreshNoteBrief?: (
+		file: TFile,
+		content: string,
+	) => string | undefined;
 	private readonly activeSummaries = new Map<string, Promise<void>>();
 	private readonly activeDashboardEnsures = new Map<
 		string,
@@ -113,6 +120,7 @@ export class DashboardEngine {
 		this.getSettings = options.getSettings;
 		this.getSessionApiKey = options.getSessionApiKey;
 		this.recordUsage = options.recordUsage;
+		this.getFreshNoteBrief = options.getFreshNoteBrief;
 	}
 
 	getDashboardPath(folder: TFolder): string {
@@ -160,7 +168,14 @@ export class DashboardEngine {
 				if (child.path === targetDashboardPath) continue;
 				const content = await this.app.vault.cachedRead(child);
 				if (isFolderIntelligenceDashboardContent(content)) continue;
-				const exclusionReason = this.aiExclusionReason(child);
+				const exclusionReason = aiExclusionReason(
+					this.app,
+					this.getSettings(),
+					child,
+				);
+				const freshBrief = exclusionReason
+					? undefined
+					: this.getFreshNoteBrief?.(child, content);
 				notes.push({
 					file: child,
 					path: child.path,
@@ -168,7 +183,8 @@ export class DashboardEngine {
 					modifiedAt: child.stat.mtime,
 					content: exclusionReason
 						? ''
-						: this.safeSourceContent(content),
+						: (freshBrief ?? this.safeSourceContent(content)),
+					contentKind: freshBrief ? 'ai-note-brief' : 'full-note',
 					aiEligible: !exclusionReason,
 					exclusionReason,
 				});
@@ -619,7 +635,7 @@ export class DashboardEngine {
 		return Boolean(this.getSessionApiKey(profile.id) || profile.apiKey);
 	}
 
-	private profileForFolder(folder: TFolder): ProviderProfile {
+	profileForFolder(folder: TFolder): ProviderProfile {
 		const dashboard = this.app.vault.getAbstractFileByPath(
 			this.getDashboardPath(folder),
 		);
@@ -650,28 +666,9 @@ export class DashboardEngine {
 			);
 	}
 
-	private aiExclusionReason(file: TFile): string | undefined {
-		const settings = this.getSettings();
-		if (matchesAnyGlob(file.path, settings.excludedAiPathPatterns))
-			return 'excluded path';
-		const frontmatter =
-			this.app.metadataCache.getFileCache(file)?.frontmatter;
-		for (const property of settings.sensitiveProperties) {
-			const value: unknown = frontmatter?.[property];
-			if (
-				value === true ||
-				(typeof value === 'string' &&
-					['true', 'yes', 'sensitive'].includes(value.toLowerCase()))
-			) {
-				return `property ${property}`;
-			}
-		}
-		return undefined;
-	}
-
 	private safeSourceContent(content: string): string {
 		try {
-			return stripManagedBlocks(content);
+			return noteSourceContent(stripManagedBlocks(content));
 		} catch {
 			return content;
 		}

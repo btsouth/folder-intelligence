@@ -22,6 +22,7 @@ interface PromptNote {
 	path: string;
 	modifiedAt: string;
 	content: string;
+	sourceKind: 'full-note' | 'ai-note-brief';
 }
 
 interface PromptFolder {
@@ -74,6 +75,7 @@ export function buildFolderPrompt(
 			path: note.path,
 			modifiedAt: new Date(note.modifiedAt).toISOString(),
 			content,
+			sourceKind: note.contentKind ?? 'full-note',
 		});
 	}
 

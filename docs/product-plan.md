@@ -58,7 +58,18 @@ A folder dashboard answers five questions:
 - Provider connection tests and model discovery where APIs expose it.
 - Cached per-note briefs so a changed folder resends only changed notes.
 
-### 0.3 — Organization review
+### 0.3 — AI note briefs
+
+- Right-click and command-palette note summarization. ✅
+- Clean native Obsidian callouts without visible management comments. ✅
+- Safe refresh and confirmed removal that preserve note content. ✅
+- Per-note fingerprints, privacy checks, provider routing, estimates, and budgets. ✅
+- Fresh note briefs reused as compact folder-summary inputs. ✅
+- Note rename/delete record maintenance. ✅
+- Opt-in folder and subtree batch note summarization.
+- Non-invasive stale-state decoration in reading and live-preview modes.
+
+### 0.4 — Organization review
 
 - Inbox dashboard for uncategorized notes.
 - Suggested destination folder, tags, properties, and related links.
@@ -67,7 +78,7 @@ A folder dashboard answers five questions:
 - Bulk actions remain previewable and recoverable.
 - Optional local embeddings; no cloud requirement.
 
-### 0.4 — Daily knowledge workflow
+### 0.5 — Daily knowledge workflow
 
 - Cross-folder home dashboard.
 - Recent changes and resurfacing views.

@@ -13,10 +13,15 @@ import {
 	type SubtreePreflight,
 	type SubtreeProgress,
 } from './dashboard-engine';
+import { NoteBriefEngine, type NoteBriefEstimate } from './note-brief-engine';
 import { dashboardPath, parentPath, pathBasename } from './path-utils';
 import { migrateProviderProfiles } from './profiles';
 import { DEFAULT_SETTINGS, FolderIntelligenceSettingTab } from './settings';
-import type { FolderIntelligenceSettings } from './types';
+import type {
+	FolderIntelligenceSettings,
+	NoteSummaryRecord,
+	UsageRecord,
+} from './types';
 import { pruneUsageRecords } from './usage';
 
 function formatCost(value: number | undefined): string {
@@ -124,6 +129,131 @@ class SummaryConfirmationModal extends Modal {
 				details.setText(
 					`Could not estimate this request: ${error instanceof Error ? error.message : String(error)}`,
 				);
+			});
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
+
+class NoteBriefConfirmationModal extends Modal {
+	constructor(
+		plugin: FolderIntelligencePlugin,
+		private readonly file: TFile,
+		private readonly engine: NoteBriefEngine,
+	) {
+		super(plugin.app);
+	}
+
+	onOpen(): void {
+		this.contentEl.createEl('h2', {
+			text: 'Summarize this note?',
+		});
+		const details = this.contentEl.createEl('p', {
+			text: 'Calculating the request…',
+		});
+		const actions = new Setting(this.contentEl);
+		actions.addButton((button) =>
+			button.setButtonText('Cancel').onClick(() => this.close()),
+		);
+		void this.engine
+			.estimate(this.file)
+			.then((estimate: NoteBriefEstimate) => {
+				details.setText(
+					`${estimate.profile.name} · ${estimate.profile.provider} / ${estimate.profile.model} · about ${estimate.estimatedInputTokens.toLocaleString()} input tokens · maximum estimated cost ${formatCost(estimate.maxEstimatedCostUsd)}.${estimate.hasBrief ? ' The existing AI note brief will be replaced.' : ''}`,
+				);
+				if (estimate.blockedReason) {
+					this.contentEl.createEl('p', {
+						text: estimate.blockedReason,
+						cls: 'mod-warning',
+					});
+					return;
+				}
+				if (!estimate.configured) {
+					this.contentEl.createEl('p', {
+						text: `${estimate.profile.name} needs a model and API key in settings.`,
+						cls: 'mod-warning',
+					});
+					return;
+				}
+				actions.addButton((button) =>
+					button
+						.setButtonText(
+							estimate.hasBrief
+								? 'Refresh note brief'
+								: 'Add note brief',
+						)
+						.setCta()
+						.onClick(async () => {
+							button.setDisabled(true);
+							try {
+								await this.engine.summarize(this.file);
+								new Notice(
+									`Folder Intelligence added an AI note brief to ${this.file.basename}.`,
+								);
+								this.close();
+							} catch (error) {
+								button.setDisabled(false);
+								new Notice(
+									`Folder Intelligence: ${error instanceof Error ? error.message : String(error)}`,
+									8000,
+								);
+							}
+						}),
+				);
+			})
+			.catch((error) => {
+				details.setText(
+					`This note cannot be summarized: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			});
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
+
+class RemoveNoteBriefModal extends Modal {
+	constructor(
+		plugin: FolderIntelligencePlugin,
+		private readonly file: TFile,
+		private readonly engine: NoteBriefEngine,
+	) {
+		super(plugin.app);
+	}
+
+	onOpen(): void {
+		this.contentEl.createEl('h2', { text: 'Remove AI note brief?' });
+		this.contentEl.createEl('p', {
+			text: 'Only the generated AI note brief callout will be removed. The rest of the note is preserved.',
+		});
+		new Setting(this.contentEl)
+			.addButton((button) =>
+				button.setButtonText('Cancel').onClick(() => this.close()),
+			)
+			.addButton((button) => {
+				button.setButtonText('Remove note brief');
+				button.buttonEl.addClass('mod-warning');
+				button.onClick(async () => {
+					button.setDisabled(true);
+					try {
+						const removed = await this.engine.remove(this.file);
+						new Notice(
+							removed
+								? `Folder Intelligence removed the AI note brief from ${this.file.basename}.`
+								: `${this.file.basename} does not contain an AI note brief.`,
+						);
+						this.close();
+					} catch (error) {
+						button.setDisabled(false);
+						new Notice(
+							`Folder Intelligence: ${error instanceof Error ? error.message : String(error)}`,
+							8000,
+						);
+					}
+				});
 			});
 	}
 
@@ -259,6 +389,7 @@ export default class FolderIntelligencePlugin extends Plugin {
 	settings: FolderIntelligenceSettings = DEFAULT_SETTINGS;
 	private sessionApiKeys = new Map<string, string>();
 	private engine!: DashboardEngine;
+	private noteBriefEngine!: NoteBriefEngine;
 	private pendingIndexRefreshes = new Map<string, number>();
 	private knownFolderPaths = new Set<string>();
 
@@ -269,13 +400,19 @@ export default class FolderIntelligencePlugin extends Plugin {
 			getSettings: () => this.settings,
 			getSessionApiKey: (profileId) =>
 				this.sessionApiKeys.get(profileId) ?? '',
-			recordUsage: async (record) => {
-				this.settings.usageRecords = pruneUsageRecords([
-					...this.settings.usageRecords,
-					record,
-				]);
-				await this.saveSettings();
-			},
+			recordUsage: (record) => this.recordUsage(record),
+			getFreshNoteBrief: (file, content) =>
+				this.noteBriefEngine?.extractFreshBrief(file, content),
+		});
+		this.noteBriefEngine = new NoteBriefEngine({
+			app: this.app,
+			getSettings: () => this.settings,
+			getSessionApiKey: (profileId) =>
+				this.sessionApiKeys.get(profileId) ?? '',
+			resolveProfile: (folder) => this.engine.profileForFolder(folder),
+			recordUsage: (record) => this.recordUsage(record),
+			upsertRecord: (record) => this.upsertNoteSummaryRecord(record),
+			removeRecord: (path) => this.removeNoteSummaryRecord(path),
 		});
 		for (const file of this.app.vault.getAllLoadedFiles()) {
 			if (file instanceof TFolder) this.knownFolderPaths.add(file.path);
@@ -306,6 +443,7 @@ export default class FolderIntelligencePlugin extends Plugin {
 			profiles: loaded?.profiles ?? [],
 			folderProfileRules: loaded?.folderProfileRules ?? [],
 			usageRecords: loaded?.usageRecords ?? [],
+			noteSummaryRecords: loaded?.noteSummaryRecords ?? [],
 		};
 		this.settings = migrateProviderProfiles(merged);
 		this.settings.usageRecords = pruneUsageRecords(
@@ -329,6 +467,74 @@ export default class FolderIntelligencePlugin extends Plugin {
 		return this.sessionApiKeys.get(profileId) || profile?.apiKey || '';
 	}
 
+	private async recordUsage(record: UsageRecord): Promise<void> {
+		this.settings.usageRecords = pruneUsageRecords([
+			...this.settings.usageRecords,
+			record,
+		]);
+		await this.saveSettings();
+	}
+
+	private async upsertNoteSummaryRecord(
+		record: NoteSummaryRecord,
+	): Promise<void> {
+		this.settings.noteSummaryRecords = [
+			...this.settings.noteSummaryRecords.filter(
+				(item) => item.path !== record.path,
+			),
+			record,
+		].slice(-10_000);
+		await this.saveSettings();
+	}
+
+	private async removeNoteSummaryRecord(path: string): Promise<void> {
+		const filtered = this.settings.noteSummaryRecords.filter(
+			(record) => record.path !== path,
+		);
+		if (filtered.length === this.settings.noteSummaryRecords.length) return;
+		this.settings.noteSummaryRecords = filtered;
+		await this.saveSettings();
+	}
+
+	private async removeNoteSummaryRecordsForPath(
+		path: string,
+		folder: boolean,
+	): Promise<void> {
+		const filtered = this.settings.noteSummaryRecords.filter((record) =>
+			folder
+				? record.path !== path && !record.path.startsWith(`${path}/`)
+				: record.path !== path,
+		);
+		if (filtered.length === this.settings.noteSummaryRecords.length) return;
+		this.settings.noteSummaryRecords = filtered;
+		await this.saveSettings();
+	}
+
+	private async remapNoteSummaryRecords(
+		oldPath: string,
+		newPath: string,
+		folder: boolean,
+	): Promise<void> {
+		let changed = false;
+		this.settings.noteSummaryRecords = this.settings.noteSummaryRecords.map(
+			(record) => {
+				if (!folder && record.path === oldPath) {
+					changed = true;
+					return { ...record, path: newPath };
+				}
+				if (folder && record.path.startsWith(`${oldPath}/`)) {
+					changed = true;
+					return {
+						...record,
+						path: `${newPath}${record.path.slice(oldPath.length)}`,
+					};
+				}
+				return record;
+			},
+		);
+		if (changed) await this.saveSettings();
+	}
+
 	private registerCommands(): void {
 		this.addCommand({
 			id: 'open-folder-dashboard',
@@ -347,6 +553,46 @@ export default class FolderIntelligencePlugin extends Plugin {
 			name: 'Refresh AI summary for current folder',
 			callback: () =>
 				void this.runSafely(() => this.summarizeCurrentFolder()),
+		});
+		this.addCommand({
+			id: 'summarize-current-note',
+			name: 'Summarize or refresh AI brief for current note',
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (
+					!file ||
+					file.extension.toLowerCase() !== 'md' ||
+					this.engine.isDashboard(file)
+				)
+					return false;
+				if (!checking)
+					new NoteBriefConfirmationModal(
+						this,
+						file,
+						this.noteBriefEngine,
+					).open();
+				return true;
+			},
+		});
+		this.addCommand({
+			id: 'remove-current-note-brief',
+			name: 'Remove AI brief from current note',
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (
+					!file ||
+					file.extension.toLowerCase() !== 'md' ||
+					this.engine.isDashboard(file)
+				)
+					return false;
+				if (!checking)
+					new RemoveNoteBriefModal(
+						this,
+						file,
+						this.noteBriefEngine,
+					).open();
+				return true;
+			},
 		});
 		this.addCommand({
 			id: 'refresh-folder-dashboard-subtree',
@@ -393,10 +639,43 @@ export default class FolderIntelligencePlugin extends Plugin {
 				'file-menu',
 				(menu: Menu, file: TAbstractFile) => {
 					if (
-						!(file instanceof TFolder) ||
-						this.engine.shouldIgnoreFolder(file)
-					)
+						file instanceof TFile &&
+						file.extension.toLowerCase() === 'md' &&
+						!this.engine.isDashboard(file)
+					) {
+						menu.addSeparator();
+						menu.addItem((item) =>
+							item
+								.setTitle(
+									this.noteBriefEngine.hasRecordedBrief(file)
+										? 'Refresh AI note brief…'
+										: 'Summarize note with AI…',
+								)
+								.setIcon('sparkles')
+								.onClick(() =>
+									new NoteBriefConfirmationModal(
+										this,
+										file,
+										this.noteBriefEngine,
+									).open(),
+								),
+						);
+						menu.addItem((item) =>
+							item
+								.setTitle('Remove AI note brief…')
+								.setIcon('trash-2')
+								.onClick(() =>
+									new RemoveNoteBriefModal(
+										this,
+										file,
+										this.noteBriefEngine,
+									).open(),
+								),
+						);
 						return;
+					}
+					if (!(file instanceof TFolder)) return;
+					if (this.engine.shouldIgnoreFolder(file)) return;
 					menu.addSeparator();
 					menu.addItem((item) =>
 						item
@@ -463,6 +742,12 @@ export default class FolderIntelligencePlugin extends Plugin {
 			this.app.vault.on('delete', (file) => {
 				if (file instanceof TFolder)
 					this.knownFolderPaths.delete(file.path);
+				void this.runSafely(() =>
+					this.removeNoteSummaryRecordsForPath(
+						file.path,
+						file instanceof TFolder,
+					),
+				);
 				this.queueAffectedIndex(file);
 			}),
 		);
@@ -471,8 +756,17 @@ export default class FolderIntelligencePlugin extends Plugin {
 				if (file instanceof TFolder) {
 					this.knownFolderPaths.delete(oldPath);
 					this.knownFolderPaths.add(file.path);
+					void this.runSafely(async () => {
+						await this.handleFolderRename(file, oldPath);
+						await this.remapNoteSummaryRecords(
+							oldPath,
+							file.path,
+							true,
+						);
+					});
+				} else if (file instanceof TFile) {
 					void this.runSafely(() =>
-						this.handleFolderRename(file, oldPath),
+						this.remapNoteSummaryRecords(oldPath, file.path, false),
 					);
 				}
 				this.queueAffectedIndex(file);
